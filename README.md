@@ -1,5 +1,7 @@
 # Phat Doinks
 
+> **VIBE CODED PROTOTYPE. I MAKE NO GUARANTEES. FUCK YOU.**
+
 Sort your meme collection using local AI vision models.
 
 Phat Doinks uses [Ollama](https://ollama.com) to classify images (and videos) into categories you define, then moves them into folders. Everything runs locally on your machine — no cloud APIs, no data leaves your box.
