@@ -1,0 +1,98 @@
+default_category = "Shitpost"
+non_meme_folder = "# Not Memes"
+
+[prompt_rules]
+preamble = """
+Look at this image and categorize it.
+
+This image is from someone's meme collection. Almost everything here IS a meme.
+Be very generous about what counts as a meme -- if it's funny, ironic, absurd,
+has text overlay, is a screenshot of social media, a reaction image, an edited image,
+a comic, fan art used humorously, or anything that looks like it was saved from the
+internet for entertainment, it IS a meme.
+
+Only mark as NOT a meme if it's clearly a personal photo, a plain unedited photograph,
+a desktop wallpaper, or a purely informational document with no humor.
+
+When in doubt, it IS a meme.
+"""
+
+[categories.Shitpost]
+description = "LAST RESORT only. Use this ONLY if the meme does not fit ANY of the other categories. Most memes should go in a specific category, not here."
+priority = 0
+
+[categories."Reaction Image"]
+description = "Images primarily used as reactions in conversations. Expressive faces, reaction pics, 'mood' images."
+priority = 3
+
+[categories.Anime]
+description = "Anime-related memes."
+priority = 5
+
+[categories.Gaming]
+description = "Video game memes, gaming culture, game screenshots used as memes."
+priority = 5
+
+[categories.Political]
+description = "Political memes, political commentary, political figures."
+priority = 5
+
+[categories.Animals]
+description = "Animal memes, cute animals, funny animal photos."
+priority = 5
+
+[categories.Cursed]
+description = "ONLY genuinely unsettling, uncomfortable, or disturbing images. Uncanny valley, 'why does this exist' energy. Typically NO text or very minimal text. Weird but funny images with text are Shitpost, not Cursed."
+priority = 5
+
+[categories."Twitter or Social Media Screenshot"]
+description = "Screenshots of tweets, tumblr posts, reddit posts, facebook posts, instagram posts, or other social media platforms."
+priority = 5
+
+[categories."Tech and Programming"]
+description = "Programming memes, tech humor, code screenshots, IT memes."
+priority = 5
+
+[categories.Wholesome]
+description = "Wholesome, heartwarming, or feel-good memes."
+priority = 5
+
+[categories.Food]
+description = "Food memes, cooking memes, food culture."
+priority = 5
+
+[categories."Film and TV"]
+description = "Movie and TV show memes, scenes used as memes."
+priority = 5
+
+[categories.Music]
+description = "Music memes, musician memes, album cover edits."
+priority = 5
+
+[categories.Sports]
+description = "Sports memes, athlete memes, sports culture."
+priority = 5
+
+[categories.Military]
+description = "Military memes, military humor, war memes."
+priority = 5
+
+[categories.History]
+description = "History memes, historical events, historical figures."
+priority = 5
+
+[categories.Fashion]
+description = "Fashion memes, outfit memes, clothing culture."
+priority = 5
+
+[categories."Science and Space"]
+description = "Science memes, space memes, physics jokes."
+priority = 5
+
+[categories.Discord]
+description = "Screenshots of Discord messages, Discord memes, Discord UI."
+priority = 7
+
+[categories.NSFW]
+description = "The image itself contains pornographic visuals: visible nudity, hentai, explicit sexual imagery. Judge ONLY by what is visually depicted, NOT by text labels. Violence/gore do NOT count."
+priority = 100

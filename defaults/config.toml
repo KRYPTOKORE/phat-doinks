@@ -1,0 +1,17 @@
+[ollama]
+endpoint = "http://localhost:11434"
+model = "llama3.2-vision"
+timeout = 120
+temperature = 0.1
+max_tokens = 100
+retries = 2
+
+[processing]
+workers = 3
+save_interval = 25
+image_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
+video_extensions = ["mp4", "webm", "mov", "mkv", "avi"]
+
+[video]
+num_frames = 4
+thumbnail_size = 512
