@@ -16,7 +16,9 @@ RULES:
 - "{default_cat}" is ONLY for memes that fit nothing else. It should be rare.
 - Look at what is VISUALLY in the image, not just text.
 
-Output ONLY this JSON: {{"category": "Category Name"}}"""
+Also generate a short, descriptive filename (lowercase, underscores, no extension, max 60 chars) that describes what's in the image. Be specific and concise. Examples: "cat_holding_beer", "drake_hotline_bling_format", "twitter_post_about_capitalism", "dark_souls_you_died_screen".
+
+Output ONLY this JSON: {{"category": "Category Name", "filename": "descriptive_name"}}"""
 
 
 def build_prompt(config: AppConfig) -> str:

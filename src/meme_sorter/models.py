@@ -21,6 +21,15 @@ class OllamaConfig:
 
 
 @dataclass
+class ClaudeConfig:
+    api_key: str = ""
+    model: str = "claude-haiku-4-5-20251001"
+    max_tokens: int = 150
+    temperature: float = 0.0
+    retries: int = 1
+
+
+@dataclass
 class ProcessingConfig:
     workers: int = 3
     save_interval: int = 25
@@ -41,6 +50,8 @@ class VideoConfig:
 @dataclass
 class AppConfig:
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
+    claude: ClaudeConfig = field(default_factory=ClaudeConfig)
+    backend: str = "ollama"  # "ollama" or "claude"
     processing: ProcessingConfig = field(default_factory=ProcessingConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
     default_category: str = "Shitpost"
@@ -54,3 +65,5 @@ class ClassificationResult:
     is_meme: bool
     category: str
     error: str | None = None
+    filename: str | None = None
+    fatal: bool = False

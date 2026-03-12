@@ -92,6 +92,25 @@ def extract_video_frames(
     return buf.getvalue()
 
 
+def _downscale_encode(path: Path, max_bytes: int = 3_750_000) -> str:
+    """Downscale an image until it fits within max_bytes for base64 encoding."""
+    img = Image.open(path)
+    img = img.convert("RGB")
+    # Try progressively smaller sizes
+    for scale in (0.75, 0.5, 0.35, 0.25):
+        w, h = int(img.width * scale), int(img.height * scale)
+        resized = img.resize((w, h), Image.LANCZOS)
+        buf = io.BytesIO()
+        resized.save(buf, format="JPEG", quality=85)
+        if buf.tell() <= max_bytes:
+            return base64.b64encode(buf.getvalue()).decode("utf-8")
+    # Last resort: tiny thumbnail
+    resized = img.resize((512, 512), Image.LANCZOS)
+    buf = io.BytesIO()
+    resized.save(buf, format="JPEG", quality=70)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
 def encode_image(
     path: Path,
     video_extensions: set[str],
@@ -112,6 +131,11 @@ def encode_image(
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    # Check file size — Claude API has a 5MB base64 limit (~3.75MB raw)
+    file_size = path.stat().st_size
+    if file_size > 3_750_000:
+        return _downscale_encode(path)
 
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")

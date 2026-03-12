@@ -27,13 +27,13 @@ def _get_media_extensions(config: AppConfig) -> set[str]:
     return img | vid
 
 
-def _safe_move(src: Path, dest_dir: Path) -> Path:
-    """Move a file to dest_dir, handling name collisions."""
+def _safe_move(src: Path, dest_dir: Path, new_name: str | None = None) -> Path:
+    """Move a file to dest_dir, optionally renaming it. Handles collisions."""
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / src.name
+    ext = src.suffix
+    stem = new_name if new_name else src.stem
+    dest = dest_dir / f"{stem}{ext}"
     if dest.exists() and dest != src:
-        stem = src.stem
-        ext = src.suffix
         h = hashlib.md5(str(src).encode()).hexdigest()[:6]
         dest = dest_dir / f"{stem}_{h}{ext}"
     shutil.move(str(src), str(dest))
@@ -78,6 +78,7 @@ def run_sort(
     dry_run: bool = False,
     limit: int = 0,
     resume_run_id: str | None = None,
+    stop_event: threading.Event | None = None,
 ) -> None:
     """Sort unsorted memes from the root directory."""
     images = collect_unsorted(meme_dir, config)
@@ -109,14 +110,46 @@ def run_sort(
     def process_one(img_path: Path):
         return img_path, classify_image(img_path, prompt, config)
 
+    processed = 0
     with ThreadPoolExecutor(max_workers=config.processing.workers) as executor:
         futures = [executor.submit(process_one, img) for img in images]
 
         for i, future in enumerate(futures):
-            img_path, result = future.result()
+            # Poll with timeout so we can check stop_event
+            while True:
+                if stop_event and stop_event.is_set():
+                    break
+                try:
+                    img_path, result = future.result(timeout=2)
+                    break
+                except TimeoutError:
+                    continue
+
+            if stop_event and stop_event.is_set():
+                # Cancel remaining futures and exit
+                for f in futures[i:]:
+                    f.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
 
             if result.error and result.category == config.default_category:
                 errors += 1
+
+            if result.fatal:
+                bus.emit(FileProcessed(
+                    path=img_path,
+                    current_category="(unsorted)",
+                    new_category=result.category,
+                    is_meme=result.is_meme,
+                    moved=False,
+                    error=f"FATAL: {result.error}",
+                    dest_path=None,
+                ))
+                # Cancel everything and stop
+                for f in futures[i + 1:]:
+                    f.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
 
             if result.is_meme:
                 dest_dir = meme_dir / result.category
@@ -126,7 +159,7 @@ def run_sort(
             did_move = False
             dest = None
             if not dry_run:
-                dest = _safe_move(img_path, dest_dir)
+                dest = _safe_move(img_path, dest_dir, result.filename)
                 did_move = True
                 with lock:
                     state.record_move(
@@ -140,6 +173,7 @@ def run_sort(
                     result.is_meme, config.ollama.model, run_id,
                 )
                 moved += 1 if did_move else 0
+                processed = i + 1
 
             bus.emit(FileProcessed(
                 path=img_path,
@@ -157,9 +191,9 @@ def run_sort(
             ))
 
     duration = time.time() - start_time
-    state.finish_run(run_id, len(images), moved, errors)
+    state.finish_run(run_id, processed, moved, errors)
     bus.emit(RunComplete(
-        processed=len(images), moved=moved, kept=0,
+        processed=processed, moved=moved, kept=0,
         errors=errors, duration=duration,
     ))
 
@@ -173,6 +207,7 @@ def run_recheck(
     limit: int = 0,
     folder: str | None = None,
     resume_run_id: str | None = None,
+    stop_event: threading.Event | None = None,
 ) -> None:
     """Re-classify files already in category folders."""
     images = collect_for_recheck(meme_dir, config, folder)
@@ -205,14 +240,44 @@ def run_recheck(
         img_path, current_cat = item
         return img_path, current_cat, classify_image(img_path, prompt, config)
 
+    processed = 0
     with ThreadPoolExecutor(max_workers=config.processing.workers) as executor:
         futures = [executor.submit(process_one, item) for item in images]
 
         for i, future in enumerate(futures):
-            img_path, current_cat, result = future.result()
+            # Poll with timeout so we can check stop_event
+            while True:
+                if stop_event and stop_event.is_set():
+                    break
+                try:
+                    img_path, current_cat, result = future.result(timeout=2)
+                    break
+                except TimeoutError:
+                    continue
+
+            if stop_event and stop_event.is_set():
+                for f in futures[i:]:
+                    f.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
 
             if result.error and result.category == config.default_category:
                 errors += 1
+
+            if result.fatal:
+                bus.emit(FileProcessed(
+                    path=img_path,
+                    current_category=current_cat,
+                    new_category=result.category,
+                    is_meme=result.is_meme,
+                    moved=False,
+                    error=f"FATAL: {result.error}",
+                    dest_path=None,
+                ))
+                for f in futures[i + 1:]:
+                    f.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
+                break
 
             new_cat = result.category if result.is_meme else config.non_meme_folder
             needs_move = new_cat != current_cat
@@ -223,7 +288,7 @@ def run_recheck(
                     moved += 1
                 if not dry_run:
                     dest_dir = meme_dir / new_cat if result.is_meme else non_meme_dir
-                    dest = _safe_move(img_path, dest_dir)
+                    dest = _safe_move(img_path, dest_dir, result.filename)
                     with lock:
                         state.record_move(
                             run_id, str(img_path), str(dest),
@@ -238,6 +303,7 @@ def run_recheck(
                     str(img_path), new_cat,
                     result.is_meme, config.ollama.model, run_id,
                 )
+                processed = i + 1
 
             bus.emit(FileProcessed(
                 path=img_path,
@@ -255,7 +321,7 @@ def run_recheck(
             ))
 
     duration = time.time() - start_time
-    state.finish_run(run_id, len(images), moved, errors)
+    state.finish_run(run_id, processed, moved, errors)
     bus.emit(RunComplete(
         processed=len(images), moved=moved, kept=kept,
         errors=errors, duration=duration,

@@ -58,10 +58,10 @@ class SortWorker:
     def __init__(self, signals: WorkerSignals):
         self.signals = signals
         self._thread = None
-        self._stop_requested = False
+        self.stop_event = threading.Event()
 
     def start(self, target, args):
-        self._stop_requested = False
+        self.stop_event.clear()
         self._thread = threading.Thread(target=self._run, args=(target, args), daemon=True)
         self._thread.start()
 
@@ -752,7 +752,7 @@ class MainWindow(QMainWindow):
 
         controls.addSpacing(16)
 
-        model_label = QLabel("Model:")
+        model_label = QLabel("Backend:")
         self._model_combo = QComboBox()
         self._model_combo.setMinimumWidth(200)
         self._model_combo.setEditable(False)
@@ -874,7 +874,7 @@ class MainWindow(QMainWindow):
             if cat_dir.is_dir():
                 self._folder_combo.addItem(cat)
 
-        # Populate model dropdown from Ollama
+        # Populate backend/model dropdown
         self._refresh_models()
 
         self._start_btn.setEnabled(True)
@@ -882,35 +882,52 @@ class MainWindow(QMainWindow):
         self._edit_cats_btn.setEnabled(True)
         self._settings_btn.setEnabled(True)
         self._log_panel.log(f"Loaded: {meme_dir}", "#88cc88")
-        self._log_panel.log(
-            f"Model: {self._config.ollama.model} @ {self._config.ollama.endpoint}",
-            "#8888cc",
-        )
+        if self._config.backend == "claude":
+            self._log_panel.log(
+                f"Backend: Claude ({self._config.claude.model})",
+                "#8888cc",
+            )
+        else:
+            self._log_panel.log(
+                f"Backend: Ollama ({self._config.ollama.model} @ {self._config.ollama.endpoint})",
+                "#8888cc",
+            )
         self._log_panel.log(f"Categories: {len(cat_names)}", "#8888cc")
 
     def _refresh_models(self):
-        """Fetch available vision models from Ollama and populate dropdown."""
+        """Populate the backend/model dropdown."""
         import requests
         self._model_combo.clear()
+
+        # Always add Claude option
+        claude_label = f"Claude ({self._config.claude.model})"
+        self._model_combo.addItem(claude_label, "claude")
+
+        # Try to fetch Ollama models
         try:
             endpoint = self._config.ollama.endpoint
-            resp = requests.get(f"{endpoint}/api/tags", timeout=5)
+            resp = requests.get(f"{endpoint}/api/tags", timeout=3)
             resp.raise_for_status()
             models = resp.json().get("models", [])
-            model_names = sorted(m["name"] for m in models)
-            self._model_combo.addItems(model_names)
-            # Select the configured model
-            current = self._config.ollama.model
-            idx = self._model_combo.findText(current)
-            if idx >= 0:
-                self._model_combo.setCurrentIndex(idx)
-            else:
-                # Model not found, add it anyway
-                self._model_combo.insertItem(0, current)
-                self._model_combo.setCurrentIndex(0)
-        except Exception as e:
-            self._model_combo.addItem(self._config.ollama.model)
-            self._log_panel.log(f"Could not fetch models: {e}", "#f04040")
+            for m in sorted(models, key=lambda x: x["name"]):
+                name = m["name"]
+                self._model_combo.addItem(f"Ollama ({name})", f"ollama:{name}")
+        except Exception:
+            # Ollama not running — add configured model as fallback
+            self._model_combo.addItem(
+                f"Ollama ({self._config.ollama.model})",
+                f"ollama:{self._config.ollama.model}",
+            )
+
+        # Select active backend
+        if self._config.backend == "claude":
+            self._model_combo.setCurrentIndex(0)
+        else:
+            for i in range(self._model_combo.count()):
+                data = self._model_combo.itemData(i)
+                if data == f"ollama:{self._config.ollama.model}":
+                    self._model_combo.setCurrentIndex(i)
+                    break
 
     def _on_mode_changed(self, index):
         self._folder_combo.setVisible(index == 2)
@@ -929,11 +946,16 @@ class MainWindow(QMainWindow):
         self._bus.subscribe(RunStarted, lambda e: self._signals.run_started.emit(e))
         self._bus.subscribe(RunComplete, lambda e: self._signals.run_complete.emit(e))
 
-        # Apply selected model
-        selected_model = self._model_combo.currentText()
-        if selected_model and selected_model != self._config.ollama.model:
-            self._config.ollama.model = selected_model
-            self._log_panel.log(f"Using model: {selected_model}", "#8888cc")
+        # Apply selected backend/model from dropdown
+        selected_data = self._model_combo.currentData()
+        if selected_data == "claude":
+            self._config.backend = "claude"
+            self._log_panel.log(f"Using: Claude ({self._config.claude.model})", "#8888cc")
+        elif selected_data and selected_data.startswith("ollama:"):
+            self._config.backend = "ollama"
+            model_name = selected_data[7:]
+            self._config.ollama.model = model_name
+            self._log_panel.log(f"Using: Ollama ({model_name})", "#8888cc")
 
         dry_run = self._dry_run_check.isChecked()
         limit = self._limit_spin.value()
@@ -944,23 +966,24 @@ class MainWindow(QMainWindow):
         self._undo_btn.setEnabled(False)
         self._log_panel.log("Starting...", "#f0c040")
 
+        stop = self._worker.stop_event
         if mode == 0:
             # Sort unsorted
-            args = (self._meme_dir, self._config, self._bus, self._state, dry_run, limit, None)
+            args = (self._meme_dir, self._config, self._bus, self._state, dry_run, limit, None, stop)
             self._worker.start(run_sort, args)
         elif mode == 1:
             # Recheck all
-            args = (self._meme_dir, self._config, self._bus, self._state, dry_run, limit, None, None)
+            args = (self._meme_dir, self._config, self._bus, self._state, dry_run, limit, None, None, stop)
             self._worker.start(run_recheck, args)
         elif mode == 2:
             # Recheck specific folder
             folder = self._folder_combo.currentText()
-            args = (self._meme_dir, self._config, self._bus, self._state, dry_run, limit, folder, None)
+            args = (self._meme_dir, self._config, self._bus, self._state, dry_run, limit, folder, None, stop)
             self._worker.start(run_recheck, args)
 
     def _stop_sort(self):
-        # Signal stop — the worker thread will finish current item
-        self._worker._stop_requested = True
+        # Signal stop — the worker thread will finish current item then exit
+        self._worker.stop_event.set()
         self._stop_btn.setEnabled(False)
         self._log_panel.log("Stop requested — finishing current image...", "#f04040")
 
@@ -1069,8 +1092,12 @@ class MainWindow(QMainWindow):
             settings = dialog.get_settings()
             self._apply_settings(settings)
             self._save_config_toml(settings)
+            if self._config.backend == "claude":
+                backend_str = f"Claude ({self._config.claude.model})"
+            else:
+                backend_str = f"Ollama ({self._config.ollama.model})"
             self._log_panel.log(
-                f"Settings saved. Model: {self._config.ollama.model} | "
+                f"Settings saved. Backend: {backend_str} | "
                 f"Workers: {self._config.processing.workers}",
                 "#88cc88",
             )

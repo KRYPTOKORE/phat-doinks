@@ -7,6 +7,7 @@ from importlib import resources
 from meme_sorter.models import (
     AppConfig,
     Category,
+    ClaudeConfig,
     OllamaConfig,
     ProcessingConfig,
     VideoConfig,
@@ -97,6 +98,18 @@ def build_app_config(
             num_frames=vid.get("num_frames", config.video.num_frames),
             thumbnail_size=vid.get("thumbnail_size", config.video.thumbnail_size),
         )
+
+        claude = raw.get("claude", {})
+        if claude:
+            config.claude = ClaudeConfig(
+                api_key=claude.get("api_key", config.claude.api_key),
+                model=claude.get("model", config.claude.model),
+                max_tokens=claude.get("max_tokens", config.claude.max_tokens),
+                temperature=claude.get("temperature", config.claude.temperature),
+                retries=claude.get("retries", config.claude.retries),
+            )
+
+        config.backend = raw.get("backend", config.backend)
 
     # Load categories
     cat_path = state_dir / CATEGORIES_FILENAME
